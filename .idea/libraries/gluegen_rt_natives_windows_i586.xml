@@ -1,0 +1,9 @@
+<component name="libraryTable">
+  <library name="gluegen-rt-natives-windows-i586">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/src/lib/jogamp-all-platforms/jogamp-all-platforms/jar/gluegen-rt-natives-windows-i586.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>
