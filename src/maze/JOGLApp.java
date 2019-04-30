@@ -1,4 +1,4 @@
-package jogl08camerasky;
+package maze;
 
 
 import com.jogamp.opengl.GLCapabilities;

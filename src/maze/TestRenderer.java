@@ -1,4 +1,4 @@
-package jogl08camerasky;
+package maze;
 
 import com.jogamp.opengl.GL2;
 import com.jogamp.opengl.GLAutoDrawable;
@@ -8,14 +8,10 @@ import com.jogamp.opengl.glu.GLUquadric;
 import com.jogamp.opengl.util.gl2.GLUT;
 import com.jogamp.opengl.util.texture.Texture;
 import com.jogamp.opengl.util.texture.TextureIO;
-import sun.misc.IOUtils;
 import utils.OglUtils;
 
-import java.awt.*;
 import java.awt.event.*;
 import java.io.*;
-import java.nio.file.Files;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -43,7 +39,7 @@ public class TestRenderer implements GLEventListener, MouseListener,
     private static final int SPEED = 35;
     private double sila = 0;
     private static final int OBJECT_SCALE = 20;
-    private static final int DISTANCE = 2; //odstup od zdi
+    private static final int DISTANCE = 3; //odstup od zdi
     private static final int DEFAULT_Y = 2; //odstup od zdi
     private List<Integer> obstacles = new ArrayList<>();
 
@@ -73,6 +69,7 @@ public class TestRenderer implements GLEventListener, MouseListener,
     public void init(GLAutoDrawable glDrawable) {
         GL2 gl = glDrawable.getGL().getGL2();
         glu = new GLU();
+        glut = new GLUT();
         glut = new GLUT();
 
         //výchozí poloha pozorovatele (vse bude*(-1))
@@ -256,6 +253,13 @@ public class TestRenderer implements GLEventListener, MouseListener,
                         }
                     }
                 }
+                if (mapPartType == 2 || mapPartType == 3 || mapPartType == 1) {
+
+                    gl.glTranslated(j * OBJECT_SCALE + OBJECT_SCALE / 2, OBJECT_SCALE, i * OBJECT_SCALE + OBJECT_SCALE / 2);
+                    renderBlock(gl);
+                    gl.glPopMatrix();
+                    gl.glPushMatrix();
+                }
 
                 switch (mapPartType) {
                     case 0:
@@ -272,8 +276,8 @@ public class TestRenderer implements GLEventListener, MouseListener,
                         //wall
 
                         gl.glTranslated(j * OBJECT_SCALE + OBJECT_SCALE / 2, 0, i * OBJECT_SCALE + OBJECT_SCALE / 2);
-
                         renderBlock(gl);
+
 //                        gl.glTranslated(-j * OBJECT_SCALE + OBJECT_SCALE / 2, 0, -i * OBJECT_SCALE + OBJECT_SCALE / 2);
                       /*  gl.glColor3f(1f, 1f, 1f);
 
@@ -400,7 +404,7 @@ public class TestRenderer implements GLEventListener, MouseListener,
      */
     private double computeCoordsByAzimut() {
         double num = Math.abs(1);
-        System.out.println("num " +((azimut % 180)-90));
+        System.out.println("num " + ((azimut % 180) - 90));
         int iPart = (int) num;
         double fPart = num - iPart;
         return 0;
@@ -413,59 +417,32 @@ public class TestRenderer implements GLEventListener, MouseListener,
                 if (keyCode == KeyEvent.VK_W) {
                     double pomx = px - ex * trans;
                     double pomz = pz - ez * trans;
-                    if (!isCollision(pomx, py, pomz)) {
-                        px = pomx;
-                        pz = pomz;
-
-                    } else {
-                        pz = pz - ez * trans;
-//                        computeCoordsByAzimut();
-                        System.out.println("1 " + ex + " " + ez);
-                    }
-
+                    computeCoordinates(pomx, py, pomz);
                 }
                 if (keyCode == KeyEvent.VK_S) {
                     double pomx = px + ex * trans;
                     double pomz = pz + ez * trans;
-                    if (!isCollision(pomx, py, pomz)) {
-                        px = pomx;
-                        pz = pomz;
-                    } else {
-                        System.out.println("2 " + azimut);
-                    }
-
+                    computeCoordinates(pomx, py, pomz);
                 }
                 if (keyCode == KeyEvent.VK_A) {
                     double pomx = px - Math.sin(a_rad - Math.PI / 2) * trans;
                     double pomz = pz + Math.cos(a_rad - Math.PI / 2) * trans;
-                    if (!isCollision(pomx, py, pomz)) {
-                        px = pomx;
-                        pz = pomz;
-                    } else {
-                        System.out.println("3 " + azimut);
-                    }
-
+                    computeCoordinates(pomx, py, pomz);
                 }
                 if (keyCode == KeyEvent.VK_D) {
                     double pomx = px + Math.sin(a_rad - Math.PI / 2) * trans;
                     double pomz = pz - Math.cos(a_rad - Math.PI / 2) * trans;
-                    if (!isCollision(pomx, py, pomz)) {
-                        px = pomx;
-                        pz = pomz;
-                    } else {
-                        System.out.println("4 " + azimut);
-                    }
-
+                    computeCoordinates(pomx, py, pomz);
                 }
                 if (keyCode == KeyEvent.VK_SPACE) {
-
+                    py += 5;
                     if (!jump) {
                         jump = true;
                         sila = 5;
                     }
                 }
                 if (keyCode == KeyEvent.VK_CONTROL) {
-                    py = 5;
+                    py -= 5;
 
                 }
 
@@ -567,42 +544,101 @@ public class TestRenderer implements GLEventListener, MouseListener,
     }
 
 
-    private boolean isCollision(double pomx, double py, double pomz) {
+    private void computeCoordinates(double x, double y, double z) {
+        /**pomx a pomz jsou 'budouci souřadnice
+         * a ty se testuji jesti se tam muze posunout' */
+        //  px = px - ex * trans;
+        // pz = pz - ez * trans;
+        double pomx = x;
+        double pomz = z/* + DISTANCE*/;
 
-        int indexX = (int) ((pomx + DISTANCE) / OBJECT_SCALE);
-        //y = z
-        int indexY = (int) (pomz / OBJECT_SCALE);
+        //horni
+        int indexX1 = (int) ((pomx + DISTANCE) / OBJECT_SCALE);
+        int indexY1 = (int) (pomz / OBJECT_SCALE);
 
-        if (obstacles.contains(map[indexY][indexX])) {
-            System.out.println("__A");
-            return true;
+        //dolni
+        int indexX2 = (int) ((pomx - DISTANCE) / OBJECT_SCALE);
+        int indexY2 = (int) (pomz / OBJECT_SCALE);
+
+        //pravy
+        int indexX3 = (int) (pomx / OBJECT_SCALE);
+        int indexY3 = (int) ((pomz + DISTANCE) / OBJECT_SCALE);
+
+        //levy
+        int indexX4 = (int) (pomx / OBJECT_SCALE);
+        int indexY4 = (int) ((pomz - DISTANCE) / OBJECT_SCALE);
+/*
+        pomz = z - DISTANCE;
+
+        //horni
+        int indexX5 = (int) ((pomx + DISTANCE) / OBJECT_SCALE);
+        int indexY5 = (int) (pomz / OBJECT_SCALE);
+
+        //dolni
+        int indexX6 = (int) ((pomx - DISTANCE) / OBJECT_SCALE);
+        int indexY6 = (int) (pomz / OBJECT_SCALE);
+
+        //pravy
+        int indexX7 = (int) (pomx / OBJECT_SCALE);
+        int indexY7 = (int) ((pomz + DISTANCE) / OBJECT_SCALE);
+
+        //levy
+        int indexX8 = (int) (pomx / OBJECT_SCALE);
+        int indexY8 = (int) ((pomz - DISTANCE) / OBJECT_SCALE);
+*/
+        boolean col1 = obstacles.contains(map[indexY1][indexX1]);
+        boolean col2 = obstacles.contains(map[indexY2][indexX2]);
+        boolean col3 = obstacles.contains(map[indexY3][indexX3]);
+        boolean col4 = obstacles.contains(map[indexY4][indexX4]);
+  /*      boolean col5 = obstacles.contains(map[indexY5][indexX5]);
+        boolean col6 = obstacles.contains(map[indexY6][indexX6]);
+        boolean col7 = obstacles.contains(map[indexY7][indexX7]);
+        boolean col8 = obstacles.contains(map[indexY8][indexX8]);
+*/
+        if (col1) {
+            System.out.println("__X+");
+
+            // px = pomx - ex * trans;
+//            if (!col5 &&!col6 && !col7&& !col8)
+            if(!col2 && !col4 && !col3)
+            pz = z;
+
+            return;
+
+        } else if (col2) {
+            System.out.println("__X-");
+
+            // px = pomx - ex * trans;
+//            if (!col5 &&!col6 && !col7&& !col8)
+            if(!col1 && !col4 && !col3)
+            pz = z;
+
+            return;
+
+        } else if (col3) {
+            System.out.println("__Z+");
+//            if (!col5 &&!col6 && !col7&& !col8)
+            if(!col1 && !col4 && !col2)
+            px = x;
+            //  pz = pomz - ez * trans;
+
+            return;
+
+        } else if (col4) {
+            System.out.println("__Z-");
+//            if (!col5 &&!col6 && !col7&& !col8)
+            if(!col1 && !col2 && !col3)
+            px = x;
+            //  pz = pomz - ez * trans;
+
+            return;
+
+        } else {
+            px = x;
+            pz = z;
         }
-        indexX = (int) ((pomx - DISTANCE) / OBJECT_SCALE);
-        //y = z
-        indexY = (int) (pomz / OBJECT_SCALE);
 
-        if (obstacles.contains(map[indexY][indexX])) {
-            System.out.println("__B");
-            return true;
-        }
-        indexX = (int) (pomx / OBJECT_SCALE);
-        //y = z
-        indexY = (int) ((pomz + DISTANCE) / OBJECT_SCALE);
 
-        if (obstacles.contains(map[indexY][indexX])) {
-            System.out.println("__C");
-            return true;
-        }
-        indexX = (int) (pomx / OBJECT_SCALE);
-        //y = z
-        indexY = (int) ((pomz - DISTANCE) / OBJECT_SCALE);
-
-        if (obstacles.contains(map[indexY][indexX])) {
-            System.out.println("__D");
-            return true;
-        }
-
-        return false;
     }
 
     @Override
