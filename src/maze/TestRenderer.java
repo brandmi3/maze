@@ -8,62 +8,52 @@ import com.jogamp.opengl.glu.GLUquadric;
 import com.jogamp.opengl.util.gl2.GLUT;
 import com.jogamp.opengl.util.texture.Texture;
 import com.jogamp.opengl.util.texture.TextureIO;
+import javafx.geometry.Point3D;
 import utils.OglUtils;
 
 import java.awt.event.*;
 import java.io.*;
-import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Scanner;
 import java.util.Set;
-/**
- * TYPES
- * 0-floor
- * 1-wall
- * 2-temp. floor
- * 3 temp. wall
- * 4
- */
 
-/**
- * trida pro zobrazeni sceny v OpenGL:
- * kamera, skybox
- *
- * @author PGRF FIM UHK
- * @version 2015
- */
+import static maze.ObstacleType.*;
+
 public class TestRenderer implements GLEventListener, MouseListener,
         MouseMotionListener, KeyListener {
+
     private static final double GRAVITY = 0.2;
+    private static final double WALL_SPEED = 0.03;
     private static final int SPEED = 35;
     private double sila = 0;
     private static final int OBJECT_SCALE = 20;
     private static final int DISTANCE = 3; //odstup od zdi
     private static final int DEFAULT_Y = 2; //odstup od zdi
-    private List<Integer> obstacles = new ArrayList<>();
-
+    private static final double COLLISION_HEIGHT = -(OBJECT_SCALE / 2 - DEFAULT_Y);
+    private double start_x;
+    private double start_z;
+    private boolean dead = false;
+    private boolean moved = false;
+    private boolean finish = false;
 
     GLU glu;
     GLUT glut;
 
-
-    int width, height, dx, dy, x, y;
+    int width, height, dx, dy;
     int ox, oy;
 
     float zenit;
     float azimut;
-    double ex, ey, ez, px, py, pz, cenx, ceny, cenz, ux, uy, uz;
+    double ex, ey, ez, px, py, pz, ux, uy, uz;
     float step, rot = 0, trans = 0;
     boolean per = true;
     double a_rad, z_rad;
     long oldmils = System.currentTimeMillis();
     boolean jump = false;
 
-    File file;
-    Texture SKY, WALL;
-    float m[] = new float[16];
-    int[][] map;
+    Obstacle[][] map;
+
+    Texture SKY, WALL, FINISH, WHITE;
 
     @Override
     public void init(GLAutoDrawable glDrawable) {
@@ -71,37 +61,6 @@ public class TestRenderer implements GLEventListener, MouseListener,
         glu = new GLU();
         glut = new GLUT();
         glut = new GLUT();
-
-        //výchozí poloha pozorovatele (vse bude*(-1))
-        px = 30;
-        py = DEFAULT_Y;
-        pz = 30;
-
-        gl.glEnable(GL2.GL_DEPTH_TEST);
-        gl.glPolygonMode(GL2.GL_FRONT, GL2.GL_FILL);
-        gl.glPolygonMode(GL2.GL_BACK, GL2.GL_FILL);
-
-        gl.glEnable(GL2.GL_LIGHTING);
-        gl.glEnable(GL2.GL_LIGHT0);
-
-        gl.glShadeModel(GL2.GL_SMOOTH);
-
-        OglUtils.printOGLparameters(gl);
-
-//load mapy
-        map = loadMap("map.txt");
-        obstacles.add(1);
-        obstacles.add(3);
-//lights
-        float[] light_amb = new float[]{1, 1, 1, 1};
-        // nastaveni zdroje svetla - difusni slozka
-        float[] light_dif = new float[]{1, 1, 1, 1};
-        // nastaveni zdroje svetla - zrcadlova slozka
-        float[] light_spec = new float[]{0.3f, 0, 0, 1};
-
-        gl.glLightfv(GL2.GL_LIGHT0, GL2.GL_AMBIENT, light_amb, 0);
-        gl.glLightfv(GL2.GL_LIGHT0, GL2.GL_DIFFUSE, light_dif, 0);
-        gl.glLightfv(GL2.GL_LIGHT0, GL2.GL_SPECULAR, light_spec, 0);
 
         System.out.println("Loading SKY...");
         InputStream is = getClass().getResourceAsStream("/11.jpg"); // vzhledem k adresari res v projektu
@@ -123,6 +82,47 @@ public class TestRenderer implements GLEventListener, MouseListener,
             } catch (IOException e) {
                 System.err.println("Chyba cteni souboru s texturou");
             }
+
+        System.out.println("Loading FINISH...");
+        is = getClass().getResourceAsStream("/finish.jpg"); // vzhledem k adresari res v projektu
+        if (is == null)
+            System.out.println("File not found");
+        else
+            try {
+                FINISH = TextureIO.newTexture(is, true, "jpg");
+            } catch (IOException e) {
+                System.err.println("Chyba cteni souboru s texturou");
+            }
+
+        System.out.println("Loading WHITE...");
+        is = getClass().getResourceAsStream("/white.jpg"); // vzhledem k adresari res v projektu
+        if (is == null)
+            System.out.println("File not found");
+        else
+            try {
+                WHITE = TextureIO.newTexture(is, true, "jpg");
+            } catch (IOException e) {
+                System.err.println("Chyba cteni souboru s texturou");
+            }
+
+        loadMap("map.txt");
+
+        px = start_x;
+        py = DEFAULT_Y;
+        pz = start_z;
+
+        gl.glEnable(GL2.GL_DEPTH_TEST);
+        gl.glPolygonMode(GL2.GL_FRONT, GL2.GL_FILL);
+        gl.glPolygonMode(GL2.GL_BACK, GL2.GL_FILL);
+
+        gl.glEnable(GL2.GL_LIGHTING);
+        gl.glEnable(GL2.GL_LIGHT0);
+
+        gl.glShadeModel(GL2.GL_SMOOTH);
+
+        OglUtils.printOGLparameters(gl);
+
+
         gl.glTexParameteri(GL2.GL_TEXTURE_2D, GL2.GL_TEXTURE_WRAP_T, GL2.GL_REPEAT);
         gl.glTexParameteri(GL2.GL_TEXTURE_2D, GL2.GL_TEXTURE_WRAP_S, GL2.GL_REPEAT);
         gl.glTexEnvi(GL2.GL_TEXTURE_ENV, GL2.GL_TEXTURE_ENV_MODE, GL2.GL_REPLACE);
@@ -131,38 +131,105 @@ public class TestRenderer implements GLEventListener, MouseListener,
 
     }
 
-    private int[][] loadMap(String fileName) {
+    private void showMenu(GLAutoDrawable glDrawable) {
+        if (!moved) {
 
-        //Get file from resources folder
+            if (dead && !finish) {
+                String text = "";
+                text += "You are dead! Try it again!";
+
+                OglUtils.drawStr2D(glDrawable, width / 2 - 2 * text.length(), height / 2 - 50, text);
+            } else if (!finish) {
+                String text = "WASD - movement";
+
+                OglUtils.drawStr2D(glDrawable, width / 2 - 2 * text.length(), height / 2, text);
+                text = "Mouse drag - looking around";
+
+                OglUtils.drawStr2D(glDrawable, width / 2 - 2 * text.length(), height / 2 + 50, text);
+
+            } else {
+                String text = "!!! CONGRATULATION !!!";
+
+                OglUtils.drawStr2D(glDrawable, width / 2 - 2 * text.length(), height / 2, text);
+
+            }
+        }
+    }
+
+    private void loadMap(String fileName) {
+
         ClassLoader classLoader = getClass().getClassLoader();
         File file = new File(classLoader.getResource(fileName).getFile());
+        int x = 0;
+        int z = 0;
+        try {
+            Scanner scanner = new Scanner(file);
 
-        try (Scanner scanner = new Scanner(file)) {
-            String firstline = scanner.nextLine();
-            int width = 0;
-            int height = 0;
-            String[] linePositions = firstline.split(",");
-            width = new Integer(linePositions[0]);
-            height = new Integer(linePositions[1]);
+            String[] linePositions;
 
-            int[][] map = new int[height][width];
-            int y = 0;
+            while (scanner.hasNextLine()) {
+
+                String line = scanner.nextLine();
+                if (z == 0) {
+                    linePositions = line.split(",");
+                    x = linePositions.length;
+                }
+                z++;
+            }
+
+            int width = x;
+            int height = z;
+            System.out.println("MAP SIZE IS: " + width + " x " + height);
+            map = new Obstacle[height][width];
+            scanner = new Scanner(file);
+
+            z = 0;
             while (scanner.hasNextLine()) {
                 String line = scanner.nextLine();
                 linePositions = line.split(",");
-                for (int x = 0; x < linePositions.length; x++) {
-                    if (x < width && y < height)
-                        map[y][x] = new Integer(linePositions[x]);
+                for (x = 0; x < linePositions.length; x++) {
+
+                    Obstacle obstacle = new Obstacle();
+                    obstacle.setPosition(new Point3D(x, DEFAULT_Y, z));
+                    /**
+                     * TYPES
+                     * 0-floor
+                     * 1-wall
+                     * 2-temp. wall
+                     * 3-start
+                     * 4-finish
+                     */
+                    //vychozi pozice
+                    if (linePositions[x].equals("3")) {
+                        start_x = x * OBJECT_SCALE * 1.5;
+                        start_z = z * OBJECT_SCALE * 1.5;
+                    }
+
+                    switch (linePositions[x]) {
+                        case "0":
+                        case "3":
+                            obstacle.setType(E_FLORR);
+                            obstacle.setTexture(WALL);
+                            break;
+                        case "1":
+                            obstacle.setType(E_WALL);
+                            break;
+                        case "2":
+                            obstacle.setType(T_WALL);
+                            obstacle.setTexture(WALL);
+                            break;
+                        case "4":
+                            obstacle.setType(ObstacleType.FINISH);
+                            obstacle.setTexture(FINISH);
+                            break;
+                    }
+                    map[z][x] = obstacle;
                 }
-                y++;
+                z++;
             }
-            return map;
-
         } catch (IOException e) {
-
             e.printStackTrace();
         }
-        return null;
     }
 
     @Override
@@ -189,11 +256,11 @@ public class TestRenderer implements GLEventListener, MouseListener,
         gl.glEnable(GL2.GL_LIGHT1);  // Enable Light One
         gl.glFogi(GL2.GL_FOG_MODE, GL2.GL_EXP2);  // Fog Mode
         gl.glFogfv(GL2.GL_FOG_COLOR, fogColor, 0);  // Set Fog Color
-        gl.glFogf(GL2.GL_FOG_DENSITY, 0.02f);    // How Dense Will The Fog Be
+        gl.glFogf(GL2.GL_FOG_DENSITY, 0.02f);    // How Dense Will The Fogmi Be
         gl.glHint(GL2.GL_FOG_HINT, GL2.GL_DONT_CARE);  // Fog Hint Value
         gl.glFogf(GL2.GL_FOG_START, 0.0f);    // Fog Start Depth
         gl.glFogf(GL2.GL_FOG_END, 50.0f);      // Fog End Depth
-//        gl.glEnable(GL2.GL_FOG);
+        gl.glEnable(GL2.GL_FOG);
 
         gl.glMatrixMode(GL2.GL_PROJECTION);
         gl.glLoadIdentity();
@@ -206,121 +273,169 @@ public class TestRenderer implements GLEventListener, MouseListener,
 
         gl.glMatrixMode(GL2.GL_MODELVIEW);
 
-
-        /** TEST kolize*/
-
-
-        //transformace pro sky box
-
-        /** vykresleni dratove koule*/
-
-//		 typ sky boxu
-        skyBox2(gl);
+        skyBox(gl);
         gl.glPopMatrix();
-
-        // transformace sceny
 
         gl.glLoadIdentity();
 
-        ux = 0;
-        uy = 1;
-        uz = 0;
-
-
         glu.gluLookAt(px, py, pz, px - ex, py - ey, pz - ez, ux, uy, uz);
 
+        /*minimapa*/
+        for (Obstacle[] obstacles : map) {
+            for (Obstacle obstacle : obstacles) {
+                gl.glPushMatrix();
 
+                gl.glTranslated(obstacle.getZ() + OBJECT_SCALE, obstacle.getX(), OBJECT_SCALE);
+                renderBlock(gl, obstacle.getType(), true);
+
+                gl.glPopMatrix();
+            }
+        }
         gl.glPushMatrix();
 
         /**objekty sceny*/
-
-        for (int i = 0; i < map.length; i++) {
-            for (int j = 0; j < map[0].length; j++) {
+        for (Obstacle[] obstacles : map) {
+            for (Obstacle obstacle : obstacles) {
                 gl.glPushMatrix();
-                int mapPartType = map[i][j];
-                boolean changeType = false;
-                if (mapPartType == 2 || mapPartType == 3) {
-                    if (Math.random() < 0.001) {
-                        changeType = true;
-                    }
-                    if (changeType) {
-                        if (mapPartType == 2) {
-                            map[i][j] = 3;
-                            mapPartType = 3;
+                if (obstacle.getType().equals(T_WALL)) {
+                    if (!obstacle.isMoving()) {
+                        if (Math.random() < 0.007) {
+                            obstacle.setMoving(true);
+                            obstacle.setDown(!obstacle.isDown());
+                        }
+                    } else {
+                        if (obstacle.getY() < -OBJECT_SCALE && obstacle.isDown()) {
+                            obstacle.setMoving(false);
+
+                        } else if (obstacle.getY() > 0 && !obstacle.isDown()) {
+                            obstacle.setMoving(false);
+                        }
+                        if (obstacle.isDown()) {
+                            obstacle.setY(obstacle.getY() - WALL_SPEED);
+
                         } else {
-                            map[i][j] = 2;
-                            mapPartType = 2;
+                            obstacle.setY(obstacle.getY() + WALL_SPEED);
                         }
                     }
-                }
-                if (mapPartType == 2 || mapPartType == 3 || mapPartType == 1) {
+                    //kolize s padajici zdi
 
-                    gl.glTranslated(j * OBJECT_SCALE + OBJECT_SCALE / 2, OBJECT_SCALE, i * OBJECT_SCALE + OBJECT_SCALE / 2);
-                    renderBlock(gl);
+                    if (map[(int) pz / OBJECT_SCALE][(int) px / OBJECT_SCALE] == obstacle && obstacle.getY() < COLLISION_HEIGHT) {
+                        endOfGame();
+                    }
+                }
+                if (obstacle.getType().equals(ObstacleType.FINISH) && map[(int) pz / OBJECT_SCALE][(int) px / OBJECT_SCALE] == obstacle) {
+                    finish();
+
+                }
+                double x = obstacle.getX();
+                double y = obstacle.getY();
+                double z = obstacle.getZ();
+                if (obstacle.getType().equals(E_WALL) || obstacle.getType().equals(T_WALL)) {
+
+                    gl.glTranslated(x * OBJECT_SCALE + OBJECT_SCALE / 2, OBJECT_SCALE, z * OBJECT_SCALE + OBJECT_SCALE / 2);
+                    renderBlock(gl, E_WALL, false);
                     gl.glPopMatrix();
                     gl.glPushMatrix();
                 }
 
-                switch (mapPartType) {
-                    case 0:
-                    case 2:
+                switch (obstacle.getType()) {
+                    case E_FLORR:
                         //floor
 
-                        gl.glTranslated(j * OBJECT_SCALE + OBJECT_SCALE / 2, -OBJECT_SCALE / 2, i * OBJECT_SCALE + OBJECT_SCALE / 2);
+                        gl.glTranslated(x * OBJECT_SCALE + OBJECT_SCALE / 2, -OBJECT_SCALE / 2, z * OBJECT_SCALE + OBJECT_SCALE / 2);
                         renderFloor(gl);
 
+                        break;
+                    case E_WALL:
+                        gl.glTranslated(x * OBJECT_SCALE + OBJECT_SCALE / 2, 0, z * OBJECT_SCALE + OBJECT_SCALE / 2);
+                        renderBlock(gl, E_WALL, false);
 
                         break;
-                    case 1:
-                    case 3:
+                    case T_WALL:
                         //wall
 
-                        gl.glTranslated(j * OBJECT_SCALE + OBJECT_SCALE / 2, 0, i * OBJECT_SCALE + OBJECT_SCALE / 2);
-                        renderBlock(gl);
+                        gl.glTranslated(x * OBJECT_SCALE + OBJECT_SCALE / 2, y +OBJECT_SCALE, z * OBJECT_SCALE + OBJECT_SCALE / 2);
+                        renderBlock(gl, T_WALL, false);
 
-//                        gl.glTranslated(-j * OBJECT_SCALE + OBJECT_SCALE / 2, 0, -i * OBJECT_SCALE + OBJECT_SCALE / 2);
-                      /*  gl.glColor3f(1f, 1f, 1f);
+                        gl.glPopMatrix();
+                        gl.glPushMatrix();
 
-                        SKY.enable(gl);
-                        SKY.bind(gl);
-                        gl.glTranslated(j * OBJECT_SCALE + OBJECT_SCALE / 2, 0, i * OBJECT_SCALE + OBJECT_SCALE / 2);
-                        gl.glScaled(OBJECT_SCALE, OBJECT_SCALE, OBJECT_SCALE);
-                        glut.glutSolidCube(1);
-*/
-
+                        gl.glTranslated(x * OBJECT_SCALE + OBJECT_SCALE / 2, -OBJECT_SCALE / 2, z * OBJECT_SCALE + OBJECT_SCALE / 2);
+                        renderFloor(gl);
 
                         break;
+                    case FINISH:
+                        gl.glTranslated(x * OBJECT_SCALE + OBJECT_SCALE / 2, -OBJECT_SCALE / 2, z * OBJECT_SCALE + OBJECT_SCALE / 2);
+                        renderFloor(gl);
 
+                        gl.glPopMatrix();
+                        gl.glPushMatrix();
+
+                        gl.glTranslated(x * OBJECT_SCALE + OBJECT_SCALE / 2, 0, z * OBJECT_SCALE + OBJECT_SCALE / 2);
+                        renderBlock(gl, ObstacleType.FINISH, false);
+                        break;
                 }
                 gl.glPopMatrix();
-
             }
         }
-
-        String text = "WASD pohyb, drag mysi pohled";
-
-
-        OglUtils.drawStr2D(glDrawable, 3, height - 20, text);
+        showMenu(glDrawable);
     }
 
     private void renderFloor(GL2 gl) {
         gl.glScaled(OBJECT_SCALE, 1, OBJECT_SCALE);
         gl.glColor3d(1, 0, 1);
         glut.glutSolidCube(1);
+    }
+
+    private void endOfGame() {
+        dead = true;
+        moved = false;
+        finish = false;
+
+        px = start_x;
+        pz = start_z;
+    }
+
+    private void finish() {
+        finish = true;
+        moved = false;
+
 
     }
 
-    public void renderBlock(GL2 gl) {
+    public void renderBlock(GL2 gl, ObstacleType type, boolean minimap) {
         gl.glColor3d(0.5, 0.5, 0.5);
 
         gl.glEnable(GL2.GL_TEXTURE_2D);
         gl.glTexEnvi(GL2.GL_TEXTURE_ENV, GL2.GL_TEXTURE_ENV_MODE, GL2.GL_REPLACE);
+        if (minimap && type.equals(T_WALL))
+            type = E_FLORR;
+        switch (type) {
+            case E_FLORR:
+                WHITE.enable(gl);
+                WHITE.bind(gl);
+                break;
+            case E_WALL:
+            case T_WALL:
+                WALL.enable(gl);
+                WALL.bind(gl);
+                break;
+            case FINISH:
+                FINISH.enable(gl);
+                FINISH.bind(gl);
+                if (!minimap) {
+                    gl.glScaled(0.5, 0.5, 0.5);
+                    gl.glTranslated(0, -OBJECT_SCALE / 2, 0);
+                }
+                break;
+        }
 
-//        gl.glRotated(1, 2d, 3d, 0);
-        WALL.enable(gl);
-        WALL.bind(gl);
+
         gl.glBegin(GL2.GL_QUADS);
-        int vertexSize = OBJECT_SCALE / 2;
+        double vertexSize = OBJECT_SCALE / 2;
+        if (minimap) {
+            vertexSize = 0.5;
+        }
 
         gl.glTexCoord2f(1.0f, 0.0f);
         gl.glVertex3d(-vertexSize, -vertexSize, -vertexSize);
@@ -398,19 +513,6 @@ public class TestRenderer implements GLEventListener, MouseListener,
 
     }
 
-
-    /**
-     * DEFINOVANI NEBE
-     */
-    private double computeCoordsByAzimut() {
-        double num = Math.abs(1);
-        System.out.println("num " + ((azimut % 180) - 90));
-        int iPart = (int) num;
-        double fPart = num - iPart;
-        return 0;
-
-    }
-
     private void move() {
         if (pressed.size() > 0) {
             for (int keyCode : pressed) {
@@ -450,7 +552,7 @@ public class TestRenderer implements GLEventListener, MouseListener,
         }
     }
 
-    public void skyBox2(GL2 gl) {
+    public void skyBox(GL2 gl) {
         gl.glColor3d(0.5, 0.5, 0.5);
 
         gl.glEnable(GL2.GL_TEXTURE_2D);
@@ -538,19 +640,17 @@ public class TestRenderer implements GLEventListener, MouseListener,
 
     @Override
     public synchronized void keyPressed(KeyEvent e) {
-
+        if (!moved)
+            moved = true;
         pressed.add(e.getKeyCode());
-
     }
-
 
     private void computeCoordinates(double x, double y, double z) {
         /**pomx a pomz jsou 'budouci souřadnice
          * a ty se testuji jesti se tam muze posunout' */
-        //  px = px - ex * trans;
-        // pz = pz - ez * trans;
+
         double pomx = x;
-        double pomz = z/* + DISTANCE*/;
+        double pomz = z;
 
         //horni
         int indexX1 = (int) ((pomx + DISTANCE) / OBJECT_SCALE);
@@ -567,78 +667,38 @@ public class TestRenderer implements GLEventListener, MouseListener,
         //levy
         int indexX4 = (int) (pomx / OBJECT_SCALE);
         int indexY4 = (int) ((pomz - DISTANCE) / OBJECT_SCALE);
-/*
-        pomz = z - DISTANCE;
 
-        //horni
-        int indexX5 = (int) ((pomx + DISTANCE) / OBJECT_SCALE);
-        int indexY5 = (int) (pomz / OBJECT_SCALE);
 
-        //dolni
-        int indexX6 = (int) ((pomx - DISTANCE) / OBJECT_SCALE);
-        int indexY6 = (int) (pomz / OBJECT_SCALE);
+        boolean col1 = map[indexY1][indexX1].getType().equals(E_WALL) || (map[indexY1][indexX1].getType().equals(T_WALL) && map[indexY1][indexX1].getY() < COLLISION_HEIGHT);
+        boolean col2 = map[indexY2][indexX2].getType().equals(E_WALL) || (map[indexY2][indexX2].getType().equals(T_WALL) && map[indexY2][indexX2].getY() < COLLISION_HEIGHT);
+        boolean col3 = map[indexY3][indexX3].getType().equals(E_WALL) || (map[indexY3][indexX3].getType().equals(T_WALL) && map[indexY3][indexX3].getY() < COLLISION_HEIGHT);
+        boolean col4 = map[indexY4][indexX4].getType().equals(E_WALL) || (map[indexY4][indexX4].getType().equals(T_WALL) && map[indexY4][indexX4].getY() < COLLISION_HEIGHT);
 
-        //pravy
-        int indexX7 = (int) (pomx / OBJECT_SCALE);
-        int indexY7 = (int) ((pomz + DISTANCE) / OBJECT_SCALE);
 
-        //levy
-        int indexX8 = (int) (pomx / OBJECT_SCALE);
-        int indexY8 = (int) ((pomz - DISTANCE) / OBJECT_SCALE);
-*/
-        boolean col1 = obstacles.contains(map[indexY1][indexX1]);
-        boolean col2 = obstacles.contains(map[indexY2][indexX2]);
-        boolean col3 = obstacles.contains(map[indexY3][indexX3]);
-        boolean col4 = obstacles.contains(map[indexY4][indexX4]);
-  /*      boolean col5 = obstacles.contains(map[indexY5][indexX5]);
-        boolean col6 = obstacles.contains(map[indexY6][indexX6]);
-        boolean col7 = obstacles.contains(map[indexY7][indexX7]);
-        boolean col8 = obstacles.contains(map[indexY8][indexX8]);
-*/
         if (col1) {
-            System.out.println("__X+");
-
-            // px = pomx - ex * trans;
-//            if (!col5 &&!col6 && !col7&& !col8)
-            if(!col2 && !col4 && !col3)
-            pz = z;
-
+            if (!col2 && !col4 && !col3)
+                pz = z;
             return;
 
         } else if (col2) {
-            System.out.println("__X-");
-
-            // px = pomx - ex * trans;
-//            if (!col5 &&!col6 && !col7&& !col8)
-            if(!col1 && !col4 && !col3)
-            pz = z;
-
+            if (!col1 && !col4 && !col3)
+                pz = z;
             return;
 
         } else if (col3) {
-            System.out.println("__Z+");
-//            if (!col5 &&!col6 && !col7&& !col8)
-            if(!col1 && !col4 && !col2)
-            px = x;
-            //  pz = pomz - ez * trans;
-
+            if (!col1 && !col4 && !col2)
+                px = x;
             return;
 
         } else if (col4) {
-            System.out.println("__Z-");
-//            if (!col5 &&!col6 && !col7&& !col8)
-            if(!col1 && !col2 && !col3)
-            px = x;
-            //  pz = pomz - ez * trans;
-
+            if (!col1 && !col2 && !col3)
+                px = x;
             return;
 
         } else {
             px = x;
             pz = z;
         }
-
-
     }
 
     @Override

@@ -14,8 +14,8 @@ import java.awt.image.BufferedImage;
 
 public class JOGLApp {
 	private static final int FPS = 60; // animator's target frames per second
-	private static final int WIDTH =800;
-	private static final int HEIGHT=600;
+	private static final int WIDTH =1920;
+	private static final int HEIGHT=1080;
 	/**
 	 * TODO:
 	 * KOLIZE
